@@ -289,6 +289,31 @@ app.post("/api/save", async (req, res) => {
   }
 });
 
+
+// ─── Debug endpoint ────────────────────────────────────────────────────────
+app.get("/debug", async (_, res) => {
+  const results = {};
+  try {
+    // Test 1: list contacts
+    const r1 = await fetch("https://api.crmworkspace.com/v1/contacts?per_page=1", {
+      headers: { ACCESS_TOKEN: WEALTHBOX_API_KEY }
+    });
+    results.contacts_status = r1.status;
+    results.contacts_text = await r1.text();
+  } catch(e) { results.contacts_error = e.message; }
+
+  try {
+    // Test 2: list tasks
+    const r2 = await fetch("https://api.crmworkspace.com/v1/tasks?per_page=1", {
+      headers: { ACCESS_TOKEN: WEALTHBOX_API_KEY }
+    });
+    results.tasks_status = r2.status;
+    results.tasks_text = await r2.text();
+  } catch(e) { results.tasks_error = e.message; }
+
+  res.json(results);
+});
+
 app.listen(PORT, () =>
   console.log(`Serenity WM Wealthbox Bridge running on port ${PORT}`)
 );
