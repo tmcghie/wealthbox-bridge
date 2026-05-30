@@ -1,5 +1,4 @@
 import express from "express";
-import crypto from "crypto";
 
 const app = express();
 app.use(express.json());
@@ -12,8 +11,20 @@ app.get("/health", (_, res) => {
   res.json({ status: "ok", service: "Serenity WM – Wealthbox Bridge" });
 });
 
+// ─── Who am I ─────────────────────────────────────────────────────────────
+app.get("/whoami", async (_, res) => {
+  try {
+    const r = await fetch("https://api.crmworkspace.com/v1/users/me", {
+      headers: { ACCESS_TOKEN: WEALTHBOX_API_KEY }
+    });
+    const d = await r.json();
+    res.json(d);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── Save page ─────────────────────────────────────────────────────────────
-// Claude links to /save?d=BASE64_JSON — user opens in browser, clicks Save
 app.get("/save", (req, res) => {
   let data = {};
   try {
@@ -25,8 +36,6 @@ app.get("/save", (req, res) => {
   }
 
   const { client_name = "", meeting_date = "", summary = "", email = "", tasks = [] } = data;
-
-  const tasksJson = JSON.stringify(tasks).replace(/'/g, "\\'");
 
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -43,7 +52,7 @@ app.get("/save", (req, res) => {
   .header-text h1{font-size:18px;font-weight:600;color:#1a1a1a}
   .header-text p{font-size:13px;color:#666;margin-top:2px}
   .card{background:#fff;border-radius:12px;border:1px solid #e5e3ec;padding:1.25rem;margin-bottom:16px}
-  .card-title{font-size:13px;font-weight:600;color:#3D2B57;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+  .card-title{font-size:13px;font-weight:600;color:#3D2B57;margin-bottom:10px}
   .meta{display:flex;gap:24px;font-size:13px;color:#555;margin-bottom:16px}
   .meta strong{color:#1a1a1a}
   .preview{font-size:13px;color:#444;line-height:1.65;white-space:pre-wrap;max-height:160px;overflow-y:auto;background:#faf9fc;border-radius:8px;padding:12px;border:1px solid #ede9f5}
@@ -57,11 +66,13 @@ app.get("/save", (req, res) => {
   .btn:hover{background:#2e2044}
   .btn:disabled{opacity:.5;cursor:not-allowed}
   .btn.suc{background:#1D9E75}
-  .status{border-radius:10px;padding:12px 16px;font-size:13px;display:flex;align-items:flex-start;gap:8px;margin-top:12px;line-height:1.5}
+  .status{border-radius:10px;padding:12px 16px;font-size:13px;margin-top:12px;line-height:1.6}
   .status.info{background:#e8f0fe;color:#1a56db}
   .status.suc{background:#e8f5f0;color:#0f6e56}
   .status.err{background:#fdecea;color:#a32d2d}
-  .badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 10px;border-radius:20px;background:#e8f5f0;color:#0f6e56;font-weight:600}
+  .badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 10px;border-radius:20px;background:#e8f5f0;color:#0f6e56;font-weight:600;margin-left:8px}
+  .user-bar{background:#fff;border:1px solid #e5e3ec;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#555;display:flex;align-items:center;justify-content:space-between}
+  .user-bar strong{color:#1a1a1a}
 </style>
 </head>
 <body>
@@ -74,6 +85,8 @@ app.get("/save", (req, res) => {
     </div>
   </div>
 
+  <div class="user-bar" id="userBar">Loading your Wealthbox user info…</div>
+
   <div class="meta">
     <div><span style="color:#888">Client</span><br><strong>${client_name}</strong></div>
     <div><span style="color:#888">Date</span><br><strong>${meeting_date}</strong></div>
@@ -81,17 +94,17 @@ app.get("/save", (req, res) => {
   </div>
 
   <div class="card">
-    <div class="card-title">📋 Meeting summary</div>
+    <div class="card-title">Meeting summary</div>
     <div class="preview">${summary.replace(/</g,"&lt;").replace(/>/g,"&gt;")}</div>
   </div>
 
   <div class="card">
-    <div class="card-title">✉️ Follow-up email</div>
+    <div class="card-title">Follow-up email</div>
     <div class="preview">${email.replace(/</g,"&lt;").replace(/>/g,"&gt;")}</div>
   </div>
 
   <div class="card">
-    <div class="card-title">✅ Action items <span class="badge">Auto-assigned to Trevor</span></div>
+    <div class="card-title">Action items <span class="badge">Auto-assigned to you</span></div>
     <ul class="task-list" id="taskList">
       ${tasks.map((t,i) => `
       <li class="task-item">
@@ -114,20 +127,33 @@ const DATE = ${JSON.stringify(meeting_date)};
 const SUMMARY = ${JSON.stringify(summary)};
 const EMAIL = ${JSON.stringify(email)};
 const TASKS = ${JSON.stringify(tasks)};
-const ASSIGNEE_ID = ${ASSIGNEE_ID};
+
+// Load user info on page load
+fetch('/whoami')
+  .then(r => r.json())
+  .then(d => {
+    const user = d.user || d;
+    const id = user.id || '?';
+    const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Unknown';
+    const email = user.email || '';
+    document.getElementById('userBar').innerHTML =
+      'Saving as: <strong>' + name + '</strong> · ' + email + ' · User ID: <strong>' + id + '</strong>';
+  })
+  .catch(() => {
+    document.getElementById('userBar').innerHTML = 'Could not load user info — check API key in Railway variables.';
+  });
 
 function setSt(type, msg) {
-  document.getElementById('status').innerHTML =
-    '<div class="status '+type+'">'+msg+'</div>';
+  document.getElementById('status').innerHTML = '<div class="status '+type+'">'+msg+'</div>';
 }
 
 async function saveAll() {
   const btn = document.getElementById('saveBtn');
   btn.disabled = true;
   btn.textContent = 'Saving…';
+  setSt('info', 'Saving to Wealthbox…');
 
   try {
-    setSt('info', 'Looking up '+CLIENT+' in Wealthbox…');
     const sr = await fetch('/api/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -143,12 +169,10 @@ async function saveAll() {
     if (!sr.ok) throw new Error(d.error || 'Save failed');
 
     const { results } = d;
-    const taskCount = results.tasks.length;
     setSt('suc',
-      '✓ Saved to Wealthbox successfully!<br>' +
-      'Contact ID: ' + results.contact_id + ' · ' +
-      results.notes.length + ' notes saved · ' +
-      taskCount + ' task' + (taskCount !== 1 ? 's' : '') + ' created and assigned to Trevor'
+      '✓ Saved successfully! · Contact ID: ' + results.contact_id +
+      ' · ' + results.notes.length + ' notes · ' +
+      results.tasks.length + ' tasks created'
     );
     btn.textContent = '✓ Saved!';
     btn.className = 'btn suc';
@@ -174,6 +198,14 @@ app.post("/api/save", async (req, res) => {
   const lastName = rest.join(" ");
 
   try {
+    // Get current user ID dynamically
+    const meRes = await fetch("https://api.crmworkspace.com/v1/users/me", {
+      headers: { ACCESS_TOKEN: WEALTHBOX_API_KEY }
+    });
+    const meData = await meRes.json();
+    const assigneeId = meData.user?.id || meData.id || parseInt(ASSIGNEE_ID);
+    console.log("Assigning tasks to user ID:", assigneeId);
+
     // Find or create contact
     const sr = await fetch(
       `https://api.crmworkspace.com/v1/contacts?first_name=${encodeURIComponent(firstName)}&last_name=${encodeURIComponent(lastName)}`,
@@ -181,6 +213,7 @@ app.post("/api/save", async (req, res) => {
     );
     const sd = await sr.json();
     let contactId = sd.contacts?.[0]?.id;
+    console.log("Contact search result:", JSON.stringify(sd).substring(0, 200));
 
     if (!contactId) {
       const cr = await fetch("https://api.crmworkspace.com/v1/contacts", {
@@ -189,6 +222,7 @@ app.post("/api/save", async (req, res) => {
         body: JSON.stringify({ contact: { first_name: firstName, last_name: lastName, type: "Person" } }),
       });
       const cd = await cr.json();
+      console.log("Contact create result:", JSON.stringify(cd).substring(0, 200));
       if (!cd.contact?.id) throw new Error("Could not create contact: " + JSON.stringify(cd));
       contactId = cd.contact.id;
     }
@@ -208,6 +242,7 @@ app.post("/api/save", async (req, res) => {
       }),
     });
     const nd = await nr.json();
+    console.log("Note result:", JSON.stringify(nd).substring(0, 200));
     if (nd.note?.id) results.notes.push({ type: "summary", id: nd.note.id });
 
     // Save email note
@@ -237,12 +272,13 @@ app.post("/api/save", async (req, res) => {
             name: task.title,
             description: task.description || "",
             due_date: task.due,
-            assignee_id: parseInt(ASSIGNEE_ID),
+            assignee_id: assigneeId,
             linked_to: [{ id: contactId, type: "Contact" }],
           },
         }),
       });
       const td = await tr.json();
+      console.log("Task result:", JSON.stringify(td).substring(0, 200));
       if (td.task?.id) results.tasks.push({ title: task.title, id: td.task.id });
     }
 
