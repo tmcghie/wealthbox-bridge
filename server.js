@@ -198,12 +198,7 @@ app.post("/api/save", async (req, res) => {
   const lastName = rest.join(" ");
 
   try {
-    // Get current user ID dynamically
-    const meRes = await fetch("https://api.crmworkspace.com/v1/users/me", {
-      headers: { ACCESS_TOKEN: WEALTHBOX_API_KEY }
-    });
-    const meData = await meRes.json();
-    const assigneeId = meData.user?.id || meData.id || parseInt(ASSIGNEE_ID);
+    const assigneeId = parseInt(ASSIGNEE_ID) || 250553;
     console.log("Assigning tasks to user ID:", assigneeId);
 
     // Find or create contact
